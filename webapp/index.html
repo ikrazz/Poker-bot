@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poker Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+            background-color: #0a472e;
+            color: white;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .card {
+            display: inline-block;
+            width: 60px;
+            height: 90px;
+            background: white;
+            border-radius: 5px;
+            border: 1px solid #333;
+            margin: 5px;
+            line-height: 90px;
+            font-size: 20px;
+            color: black;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .heart, .diamond { color: red; }
+        button {
+            background: #ffcc00;
+            border: none;
+            padding: 10px 20px;
+            margin: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        #balance {
+            font-size: 20px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>♠️♥️♣️♦️ Poker Club</h1>
+        
+        <div id="balance">Loading balance...</div>
+        
+        <div id="gameArea">
+            <h2>Your cards:</h2>
+            <div id="playerCards"></div>
+            
+            <div style="margin: 20px 0;">
+                <button id="checkBtn">Check</button>
+                <button id="foldBtn">Fold</button>
+                <button id="callBtn">Call (50)</button>
+                <button id="raiseBtn">Raise (100)</button>
+            </div>
+            
+            <h2>Community cards:</h2>
+            <div id="communityCards"></div>
+        </div>
+    </div>
+
+    <script>
+        // Инициализация Telegram Web App
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Раскрываем приложение на весь экран
+        tg.enableClosingConfirmation(); // Подтверждение перед закрытием
+        
+        // Получаем данные пользователя
+        const user = tg.initDataUnsafe.user;
+        const userId = user.id;
+        const username = user.username;
+        
+        // Показываем данные пользователя
+        document.getElementById('balance').innerText = `Loading balance for @${username}...`;
+        
+        // Функция для получения баланса
+        async function getBalance() {
+            try {
+                // В реальности здесь будет запрос к вашему боту
+                // Заглушка для демонстрации
+                const fakeBalance = Math.floor(Math.random() * 2000) + 500;
+                document.getElementById('balance').innerText = `💰 Your balance: ${fakeBalance} chips`;
+                
+                // Генерируем тестовые карты
+                generateCards();
+                
+            } catch (error) {
+                console.error('Error getting balance:', error);
+                document.getElementById('balance').innerText = 'Error loading balance';
+            }
+        }
+        
+        // Генерация карт (заглушка)
+        function generateCards() {
+            const suits = ['♠', '♥', '♣', '♦'];
+            const values = ['A', 'K', 'Q', 'J', '10', '9', '8'];
+            
+            const playerCards = document.getElementById('playerCards');
+            playerCards.innerHTML = '';
+            
+            // Генерируем 2 карты для игрока
+            for (let i = 0; i < 2; i++) {
+                const suit = suits[Math.floor(Math.random() * suits.length)];
+                const value = values[Math.floor(Math.random() * values.length)];
+                const colorClass = (suit === '♥' || suit === '♦') ? 'heart' : '';
+                
+                const card = document.createElement('div');
+                card.className = `card ${colorClass}`;
+                card.innerHTML = `${value}${suit}`;
+                playerCards.appendChild(card);
+            }
+            
+            const communityCards = document.getElementById('communityCards');
+            communityCards.innerHTML = '';
+            
+            // Генерируем 5 общих карт
+            for (let i = 0; i < 5; i++) {
+                const suit = suits[Math.floor(Math.random() * suits.length)];
+                const value = values[Math.floor(Math.random() * values.length)];
+                const colorClass = (suit === '♥' || suit === '♦') ? 'heart' : '';
+                
+                const card = document.createElement('div');
+                card.className = `card ${colorClass}`;
+                card.innerHTML = `${value}${suit}`;
+                communityCards.appendChild(card);
+            }
+        }
+        
+        // Обработчики кнопок
+        document.getElementById('checkBtn').addEventListener('click', () => {
+            tg.showPopup({
+                title: 'Check',
+                message: 'You checked',
+                buttons: [{ type: 'ok' }]
+            });
+        });
+        
+        document.getElementById('foldBtn').addEventListener('click', () => {
+            tg.showPopup({
+                title: 'Fold',
+                message: 'You folded your cards',
+                buttons: [{ type: 'ok' }]
+            });
+        });
+        
+        document.getElementById('callBtn').addEventListener('click', () => {
+            tg.showPopup({
+                title: 'Call',
+                message: 'You called 50 chips',
+                buttons: [{ type: 'ok' }]
+            });
+        });
+        
+        document.getElementById('raiseBtn').addEventListener('click', () => {
+            tg.showPopup({
+                title: 'Raise',
+                message: 'You raised to 100 chips',
+                buttons: [{ type: 'ok' }]
+            });
+        });
+        
+        // Инициализация приложения
+        window.onload = getBalance;
+    </script>
+</body>
+</html>
