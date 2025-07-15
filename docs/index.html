@@ -1,175 +1,189 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Poker Mini App</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 20px;
-            background-color: #0a472e;
-            color: white;
-        }
-        .container {
-            max-width: 500px;
-            margin: 0 auto;
-        }
-        .card {
-            display: inline-block;
-            width: 60px;
-            height: 90px;
-            background: white;
-            border-radius: 5px;
-            border: 1px solid #333;
-            margin: 5px;
-            line-height: 90px;
-            font-size: 20px;
-            color: black;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-        }
-        .heart, .diamond { color: red; }
-        button {
-            background: #ffcc00;
-            border: none;
-            padding: 10px 20px;
-            margin: 10px;
-            border-radius: 5px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        #balance {
-            font-size: 20px;
-            margin: 15px 0;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>♠️♥️♣️♦️ Poker Club</h1>
-        
-        <div id="balance">Loading balance...</div>
-        
-        <div id="gameArea">
-            <h2>Your cards:</h2>
-            <div id="playerCards"></div>
-            
-            <div style="margin: 20px 0;">
-                <button id="checkBtn">Check</button>
-                <button id="foldBtn">Fold</button>
-                <button id="callBtn">Call (50)</button>
-                <button id="raiseBtn">Raise (100)</button>
-            </div>
-            
-            <h2>Community cards:</h2>
-            <div id="communityCards"></div>
-        </div>
-    </div>
+const tg = window.Telegram.WebApp;
+tg.expand();
+tg.enableClosingConfirmation();
 
-    <script>
-        // Инициализация Telegram Web App
-        const tg = window.Telegram.WebApp;
-        tg.expand(); // Раскрываем приложение на весь экран
-        tg.enableClosingConfirmation(); // Подтверждение перед закрытием
+// Элементы интерфейса
+const balanceElement = document.getElementById('balance');
+const playerCardsElement = document.getElementById('playerCards');
+const communityCardsElement = document.getElementById('communityCards');
+const statusElement = document.getElementById('status');
+const potElement = document.getElementById('pot');
+
+// Переменные игры
+let currentTableId = null;
+let currentUserId = null;
+let gameState = null;
+
+// Инициализация
+window.onload = async () => {
+    // Получаем данные пользователя
+    const user = tg.initDataUnsafe.user;
+    currentUserId = user.id;
+    
+    // Показываем загрузку
+    balanceElement.innerText = `Загрузка данных для @${user.username}...`;
+    statusElement.innerText = "Ожидание присоединения к столу";
+    
+    // Запрашиваем номер стола
+    const tableId = prompt("Введите номер игрового стола:");
+    if (tableId && !isNaN(tableId)) {
+        joinTable(parseInt(tableId));
+    } else {
+        statusElement.innerText = "Неверный номер стола. Перезагрузите приложение.";
+    }
+};
+
+// Присоединение к столу
+async function joinTable(tableId) {
+    currentTableId = tableId;
+    statusElement.innerText = `Присоединяемся к столу #${tableId}...`;
+    
+    try {
+        // Отправляем запрос на присоединение
+        const response = await fetch(`/api/join_table/${tableId}/${currentUserId}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+        });
         
-        // Получаем данные пользователя
-        const user = tg.initDataUnsafe.user;
-        const userId = user.id;
-        const username = user.username;
-        
-        // Показываем данные пользователя
-        document.getElementById('balance').innerText = `Loading balance for @${username}...`;
-        
-        // Функция для получения баланса
-        async function getBalance() {
-            try {
-                // В реальности здесь будет запрос к вашему боту
-                // Заглушка для демонстрации
-                const fakeBalance = Math.floor(Math.random() * 2000) + 500;
-                document.getElementById('balance').innerText = `💰 Your balance: ${fakeBalance} chips`;
-                
-                // Генерируем тестовые карты
-                generateCards();
-                
-            } catch (error) {
-                console.error('Error getting balance:', error);
-                document.getElementById('balance').innerText = 'Error loading balance';
-            }
+        const result = await response.json();
+        if (result.success) {
+            statusElement.innerText = `Вы за столом #${tableId}. Ожидание начала игры...`;
+            startGameLoop();
+        } else {
+            statusElement.innerText = `Ошибка: ${result.message}`;
         }
-        
-        // Генерация карт (заглушка)
-        function generateCards() {
-            const suits = ['♠', '♥', '♣', '♦'];
-            const values = ['A', 'K', 'Q', 'J', '10', '9', '8'];
+    } catch (error) {
+        console.error('Ошибка присоединения:', error);
+        statusElement.innerText = "Ошибка соединения с сервером";
+    }
+}
+
+// Игровой цикл
+async function startGameLoop() {
+    while (currentTableId) {
+        try {
+            // Получаем текущее состояние игры
+            const response = await fetch(`/api/table/${currentTableId}/${currentUserId}`);
+            const data = await response.json();
             
-            const playerCards = document.getElementById('playerCards');
-            playerCards.innerHTML = '';
-            
-            // Генерируем 2 карты для игрока
-            for (let i = 0; i < 2; i++) {
-                const suit = suits[Math.floor(Math.random() * suits.length)];
-                const value = values[Math.floor(Math.random() * values.length)];
-                const colorClass = (suit === '♥' || suit === '♦') ? 'heart' : '';
-                
-                const card = document.createElement('div');
-                card.className = `card ${colorClass}`;
-                card.innerHTML = `${value}${suit}`;
-                playerCards.appendChild(card);
+            if (data.error) {
+                statusElement.innerText = data.error;
+                break;
             }
             
-            const communityCards = document.getElementById('communityCards');
-            communityCards.innerHTML = '';
+            gameState = data;
+            updateGameUI();
             
-            // Генерируем 5 общих карт
-            for (let i = 0; i < 5; i++) {
-                const suit = suits[Math.floor(Math.random() * suits.length)];
-                const value = values[Math.floor(Math.random() * values.length)];
-                const colorClass = (suit === '♥' || suit === '♦') ? 'heart' : '';
-                
-                const card = document.createElement('div');
-                card.className = `card ${colorClass}`;
-                card.innerHTML = `${value}${suit}`;
-                communityCards.appendChild(card);
-            }
+            // Пауза перед следующим обновлением
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+        } catch (error) {
+            console.error('Ошибка получения состояния:', error);
+            statusElement.innerText = "Ошибка соединения с сервером";
+            break;
         }
-        
-        // Обработчики кнопок
-        document.getElementById('checkBtn').addEventListener('click', () => {
-            tg.showPopup({
-                title: 'Check',
-                message: 'You checked',
-                buttons: [{ type: 'ok' }]
-            });
+    }
+}
+
+// Обновление интерфейса
+function updateGameUI() {
+    if (!gameState) return;
+    
+    // Обновление баланса
+    const playerData = gameState.players[currentUserId];
+    if (playerData) {
+        balanceElement.innerText = `💰 Баланс: ${playerData.chips} фишек`;
+    }
+    
+    // Обновление карт игрока
+    playerCardsElement.innerHTML = '';
+    if (playerData && playerData.cards) {
+        playerData.cards.forEach(card => {
+            const cardElement = document.createElement('div');
+            cardElement.className = 'card';
+            cardElement.textContent = card;
+            playerCardsElement.appendChild(cardElement);
+        });
+    }
+    
+    // Обновление общих карт
+    communityCardsElement.innerHTML = '';
+    if (gameState.community_cards) {
+        gameState.community_cards.forEach(card => {
+            const cardElement = document.createElement('div');
+            cardElement.className = 'card';
+            cardElement.textContent = card;
+            communityCardsElement.appendChild(cardElement);
+        });
+    }
+    
+    // Обновление банка
+    potElement.innerText = `🏆 Банк: ${gameState.pot} фишек`;
+    
+    // Обновление статуса
+    if (gameState.current_player === currentUserId) {
+        statusElement.innerText = '⭐ ВАШ ХОД!';
+        enableButtons(true);
+    } else {
+        statusElement.innerText = '⏳ Ожидание хода другого игрока...';
+        enableButtons(false);
+    }
+    
+    // Информация о фазе игры
+    const phaseNames = {
+        'waiting': 'Ожидание игроков',
+        'preflop': 'Префлоп',
+        'flop': 'Флоп',
+        'turn': 'Терн',
+        'river': 'Ривер',
+        'showdown': 'Определение победителя'
+    };
+    document.getElementById('phase').innerText = `Фаза: ${phaseNames[gameState.phase]}`;
+}
+
+// Управление кнопками
+function enableButtons(enabled) {
+    document.querySelectorAll('button').forEach(btn => {
+        btn.disabled = !enabled;
+    });
+}
+
+// Отправка действий
+async function sendAction(action, amount = 0) {
+    if (!currentTableId) return;
+    
+    try {
+        const response = await fetch(`/api/action/${currentTableId}/${currentUserId}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ action, amount })
         });
         
-        document.getElementById('foldBtn').addEventListener('click', () => {
+        const result = await response.json();
+        if (!result.success) {
             tg.showPopup({
-                title: 'Fold',
-                message: 'You folded your cards',
+                title: 'Ошибка',
+                message: result.message,
                 buttons: [{ type: 'ok' }]
             });
+        }
+    } catch (error) {
+        console.error('Ошибка отправки действия:', error);
+        tg.showPopup({
+            title: 'Ошибка',
+            message: 'Не удалось отправить действие',
+            buttons: [{ type: 'ok' }]
         });
-        
-        document.getElementById('callBtn').addEventListener('click', () => {
-            tg.showPopup({
-                title: 'Call',
-                message: 'You called 50 chips',
-                buttons: [{ type: 'ok' }]
-            });
-        });
-        
-        document.getElementById('raiseBtn').addEventListener('click', () => {
-            tg.showPopup({
-                title: 'Raise',
-                message: 'You raised to 100 chips',
-                buttons: [{ type: 'ok' }]
-            });
-        });
-        
-        // Инициализация приложения
-        window.onload = getBalance;
-    </script>
-</body>
-</html>
+    }
+}
+
+// Обработчики кнопок
+document.getElementById('checkBtn').addEventListener('click', () => sendAction('check'));
+document.getElementById('foldBtn').addEventListener('click', () => sendAction('fold'));
+document.getElementById('callBtn').addEventListener('click', () => sendAction('call'));
+document.getElementById('raiseBtn').addEventListener('click', () => {
+    const amount = parseInt(prompt('Введите сумму повышения:'));
+    if (!isNaN(amount)) {
+        sendAction('raise', amount);
+    }
+});
