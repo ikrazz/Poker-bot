@@ -1,0 +1,124 @@
+import random
+from collections import Counter
+
+SUITS = ['♠', '♥', '♣', '♦']
+RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+
+class PokerHand:
+    HAND_RANKS = {
+        "Royal Flush": 10,
+        "Straight Flush": 9,
+        "Four of a Kind": 8,
+        "Full House": 7,
+        "Flush": 6,
+        "Straight": 5,
+        "Three of a Kind": 4,
+        "Two Pair": 3,
+        "One Pair": 2,
+        "High Card": 1
+    }
+    
+    def __init__(self, cards):
+        self.cards = cards
+        self.values = sorted([RANKS.index(card[:-1]) for card in cards], reverse=True)
+        self.suits = [card[-1] for card in cards]
+        self.rank = self.evaluate()
+    
+    def evaluate(self):
+        if self.is_royal_flush():
+            return ("Royal Flush", self.values)
+        elif self.is_straight_flush():
+            return ("Straight Flush", self.values)
+        elif self.is_four_of_a_kind():
+            return ("Four of a Kind", self.values)
+        elif self.is_full_house():
+            return ("Full House", self.values)
+        elif self.is_flush():
+            return ("Flush", self.values)
+        elif self.is_straight():
+            return ("Straight", self.values)
+        elif self.is_three_of_a_kind():
+            return ("Three of a Kind", self.values)
+        elif self.is_two_pair():
+            return ("Two Pair", self.values)
+        elif self.is_one_pair():
+            return ("One Pair", self.values)
+        else:
+            return ("High Card", self.values)
+    
+    def is_flush(self):
+        return len(set(self.suits)) == 1
+    
+    def is_straight(self):
+        return len(set(self.values)) == 5 and (max(self.values) - min(self.values) == 4)
+    
+    def is_straight_flush(self):
+        return self.is_flush() and self.is_straight()
+    
+    def is_royal_flush(self):
+        return self.is_straight_flush() and min(self.values) == 8  # A, K, Q, J, 10
+    
+    def is_four_of_a_kind(self):
+        counts = Counter(self.values)
+        return 4 in counts.values()
+    
+    def is_full_house(self):
+        counts = Counter(self.values)
+        return sorted(counts.values()) == [2, 3]
+    
+    def is_three_of_a_kind(self):
+        counts = Counter(self.values)
+        return 3 in counts.values()
+    
+    def is_two_pair(self):
+        counts = Counter(self.values)
+        return list(counts.values()).count(2) == 2
+    
+    def is_one_pair(self):
+        counts = Counter(self.values)
+        return list(counts.values()).count(2) == 1
+    
+    def compare(self, other):
+        if self.HAND_RANKS[self.rank[0]] > self.HAND_RANKS[other.rank[0]]:
+            return 1
+        elif self.HAND_RANKS[self.rank[0]] < self.HAND_RANKS[other.rank[0]]:
+            return -1
+        else:
+            for i in range(5):
+                if self.values[i] > other.values[i]:
+                    return 1
+                elif self.values[i] < other.values[i]:
+                    return -1
+            return 0
+
+class PokerGame:
+    def __init__(self):
+        self.deck = self.generate_deck()
+        self.shuffle_deck()
+    
+    def generate_deck(self):
+        return [rank + suit for suit in SUITS for rank in RANKS]
+    
+    def shuffle_deck(self):
+        random.shuffle(self.deck)
+    
+    def deal_cards(self, num_cards=2):
+        return [self.deck.pop() for _ in range(num_cards)]
+    
+    def deal_community_cards(self, num_cards):
+        return [self.deck.pop() for _ in range(num_cards)]
+    
+    @staticmethod
+    def determine_winner(players, community_cards):
+        best_hand = None
+        winner = None
+        
+        for player_id, player_cards in players.items():
+            all_cards = player_cards + community_cards
+            hand = PokerHand(all_cards)
+            
+            if best_hand is None or hand.compare(best_hand) > 0:
+                best_hand = hand
+                winner = player_id
+        
+        return winner
