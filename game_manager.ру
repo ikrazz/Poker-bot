@@ -1,0 +1,223 @@
+import threading
+import time
+from poker_logic import PokerGame
+
+class GameTable:
+    def __init__(self, table_id, max_players=6, small_blind=25, big_blind=50):
+        self.table_id = table_id
+        self.max_players = max_players
+        self.players = {}  # {user_id: {'chips': int, 'cards': list, 'state': 'active/folded'}}
+        self.game = PokerGame()
+        self.community_cards = []
+        self.pot = 0
+        self.current_bets = {}
+        self.current_player = None
+        self.small_blind = small_blind
+        self.big_blind = big_blind
+        self.dealer_position = 0
+        self.game_phase = 'waiting'  # waiting/preflop/flop/turn/river/showdown
+        self.lock = threading.Lock()
+        self.game_thread = None
+    
+    def add_player(self, user_id, chips):
+        with self.lock:
+            if len(self.players) < self.max_players and user_id not in self.players:
+                self.players[user_id] = {'chips': chips, 'cards': [], 'state': 'waiting'}
+                return True
+        return False
+    
+    def remove_player(self, user_id):
+        with self.lock:
+            if user_id in self.players:
+                # Если игра идет, игрок автоматически фолдит
+                if self.game_phase != 'waiting':
+                    self.players[user_id]['state'] = 'folded'
+                else:
+                    del self.players[user_id]
+                return True
+        return False
+    
+    def start_game(self):
+        with self.lock:
+            if len(self.players) >= 2 and self.game_phase == 'waiting':
+                self.game_phase = 'preflop'
+                self.pot = 0
+                self.community_cards = []
+                self.game = PokerGame()
+                
+                # Раздача карт
+                for player in self.players:
+                    self.players[player]['cards'] = self.game.deal_cards(2)
+                    self.players[player]['state'] = 'active'
+                    self.current_bets[player] = 0
+                
+                # Определение позиций
+                self.dealer_position = (self.dealer_position + 1) % len(self.players)
+                player_ids = list(self.players.keys())
+                sb_player = player_ids[(self.dealer_position + 1) % len(player_ids)]
+                bb_player = player_ids[(self.dealer_position + 2) % len(player_ids)]
+                
+                # Ставим блайнды
+                self.place_bet(sb_player, self.small_blind)
+                self.place_bet(bb_player, self.big_blind)
+                
+                # Первый ход после блайндов
+                self.current_player = player_ids[(self.dealer_position + 3) % len(player_ids)]
+                
+                # Запускаем игровой поток
+                self.game_thread = threading.Thread(target=self.game_loop)
+                self.game_thread.daemon = True
+                self.game_thread.start()
+                return True
+        return False
+    
+    def place_bet(self, user_id, amount):
+        if user_id in self.players and self.players[user_id]['state'] == 'active':
+            if self.players[user_id]['chips'] >= amount:
+                self.players[user_id]['chips'] -= amount
+                self.current_bets[user_id] = amount
+                self.pot += amount
+                return True
+        return False
+    
+    def player_action(self, user_id, action, amount=0):
+        with self.lock:
+            if self.current_player != user_id or self.players[user_id]['state'] != 'active':
+                return False, "Сейчас не ваш ход"
+            
+            if action == 'fold':
+                self.players[user_id]['state'] = 'folded'
+                self.next_player()
+                return True, "Вы сбросили карты"
+            
+            elif action == 'call':
+                max_bet = max(self.current_bets.values())
+                call_amount = max_bet - self.current_bets[user_id]
+                if self.place_bet(user_id, call_amount):
+                    self.next_player()
+                    return True, f"Вы ответили {call_amount}"
+                return False, "Недостаточно фишек"
+            
+            elif action == 'raise':
+                max_bet = max(self.current_bets.values())
+                if amount <= max_bet:
+                    return False, "Ставка должна быть больше текущей"
+                raise_amount = amount - self.current_bets[user_id]
+                if self.place_bet(user_id, raise_amount):
+                    self.next_player()
+                    return True, f"Вы повысили ставку до {amount}"
+                return False, "Недостаточно фишек"
+            
+            elif action == 'check':
+                if max(self.current_bets.values()) == 0:
+                    self.next_player()
+                    return True, "Проверка"
+                return False, "Нельзя проверить, есть ставка"
+            
+            return False, "Неизвестное действие"
+    
+    def next_player(self):
+        active_players = [p for p, data in self.players.items() if data['state'] == 'active']
+        if not active_players:
+            self.end_game()
+            return
+        
+        current_index = active_players.index(self.current_player)
+        next_index = (current_index + 1) % len(active_players)
+        self.current_player = active_players[next_index]
+    
+    def game_loop(self):
+        while self.game_phase != 'showdown':
+            time.sleep(5)  # Пауза между фазами
+            
+            with self.lock:
+                if self.game_phase == 'preflop':
+                    self.community_cards = self.game.deal_community_cards(3)
+                    self.game_phase = 'flop'
+                
+                elif self.game_phase == 'flop':
+                    self.community_cards.append(self.game.deal_community_cards(1)[0])
+                    self.game_phase = 'turn'
+                
+                elif self.game_phase == 'turn':
+                    self.community_cards.append(self.game.deal_community_cards(1)[0])
+                    self.game_phase = 'river'
+                
+                elif self.game_phase == 'river':
+                    self.game_phase = 'showdown'
+                    self.determine_winner()
+    
+    def determine_winner(self):
+        active_players = {p: data['cards'] for p, data in self.players.items() if data['state'] == 'active'}
+        winner = PokerGame.determine_winner(active_players, self.community_cards)
+        
+        if winner:
+            self.players[winner]['chips'] += self.pot
+            # Уведомление игроков о победителе
+        
+        # Сброс игры
+        self.game_phase = 'waiting'
+        self.pot = 0
+        for player in self.players:
+            self.players[player]['cards'] = []
+            self.players[player]['state'] = 'waiting'
+
+class GameManager:
+    def __init__(self):
+        self.tables = {}
+        self.lock = threading.Lock()
+        self.table_counter = 1
+    
+    def create_table(self, small_blind=25, big_blind=50, max_players=6):
+        with self.lock:
+            table_id = self.table_counter
+            self.table_counter += 1
+            self.tables[table_id] = GameTable(table_id, max_players, small_blind, big_blind)
+            return table_id
+    
+    def join_table(self, table_id, user_id, chips):
+        with self.lock:
+            if table_id in self.tables:
+                return self.tables[table_id].add_player(user_id, chips)
+        return False
+    
+    def leave_table(self, table_id, user_id):
+        with self.lock:
+            if table_id in self.tables:
+                return self.tables[table_id].remove_player(user_id)
+        return False
+    
+    def start_table_game(self, table_id):
+        with self.lock:
+            if table_id in self.tables:
+                return self.tables[table_id].start_game()
+        return False
+    
+    def player_action(self, table_id, user_id, action, amount=0):
+        with self.lock:
+            if table_id in self.tables:
+                return self.tables[table_id].player_action(user_id, action, amount)
+        return False, "Стол не найден"
+    
+    def get_table_state(self, table_id, user_id):
+        with self.lock:
+            if table_id in self.tables:
+                table = self.tables[table_id]
+                state = {
+                    'phase': table.game_phase,
+                    'community_cards': table.community_cards,
+                    'pot': table.pot,
+                    'current_player': table.current_player,
+                    'players': {}
+                }
+                
+                for p_id, p_data in table.players.items():
+                    state['players'][p_id] = {
+                        'chips': p_data['chips'],
+                        'state': p_data['state'],
+                        # Показываем карты только текущему игроку
+                        'cards': p_data['cards'] if p_id == user_id else []
+                    }
+                
+                return state
+        return None
